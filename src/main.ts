@@ -9,11 +9,11 @@ async function bootstrap() {
 
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,                          // Remove fields that are not in DTO
-      forbidNonWhitelisted: false,              // Optional: throw error if extra fields provided
-      transform: true,                          // Automatically transform payloads to DTO instances
+      whitelist: true, // Remove fields that are not in DTO
+      forbidNonWhitelisted: false, // Optional: throw error if extra fields provided
+      transform: true, // Automatically transform payloads to DTO instances
       transformOptions: {
-        enableImplicitConversion: true,         // Allows type conversion (string → number)
+        enableImplicitConversion: true, // Allows type conversion (string → number)
       },
     }),
   );
