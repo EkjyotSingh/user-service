@@ -1,14 +1,18 @@
-import { Body, Controller, Post, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto } from './dto/login.dto';
-import { AuthProvider } from './enums/auth-provider.enum';
+import { LoginDto, SocialLoginDto } from './dto/login.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+    constructor(private readonly authService: AuthService) { }
 
-  @Post('login')
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
-  }
+    @Post('login')
+    async login(@Body() dto: LoginDto) {
+        return await this.authService.login(dto);
+    }
+
+    @Post('social-login')
+    async socialLogin(@Body() dto: SocialLoginDto) {
+        return await this.authService.socialLogin(dto);
+    }
 }

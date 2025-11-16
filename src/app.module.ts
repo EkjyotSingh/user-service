@@ -26,13 +26,13 @@ import { SessionModule } from './session/session.module';
         database: config.get<string>('DB_NAME'),
         autoLoadEntities: true,
         synchronize: config.get<string>('NODE_ENV') === 'development',
-        timezone: 'Z'
+        timezone: 'Z',
       }),
     }),
     UsersModule,
     AuthModule,
     OtpModule,
-    SessionModule
+    SessionModule,
   ],
 
   controllers: [AppController],

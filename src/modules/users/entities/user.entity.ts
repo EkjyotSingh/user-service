@@ -5,8 +5,9 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  BaseEntity,
+  OneToMany,
 } from 'typeorm';
+import { UserSession } from './user-session.entity';
 
 @Entity('users')
 export class User extends BaseEntity {
@@ -30,6 +31,9 @@ export class User extends BaseEntity {
     enum: AuthProvider,
   })
   provider: AuthProvider;
+
+  @Column({ nullable: true, name: 'provider_id' })
+  providerId?: string;
 
   @Column({ default: false, name: 'is_email_verified' })
   isEmailVerified: boolean;

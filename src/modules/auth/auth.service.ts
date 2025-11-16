@@ -1,10 +1,6 @@
-import {
-  BadRequestException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, SocialLoginDto } from './dto/login.dto';
 import { AuthProvider } from './enums/auth-provider.enum';
 import { UsersService } from '../users/users.service';
 import { ConfigService } from '@nestjs/config';
@@ -13,16 +9,26 @@ import { SessionService } from 'src/session/session.service';
 import * as bcrypt from 'bcrypt';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { User } from '../users/entities/user.entity';
+import { OAuth2Client } from 'google-auth-library';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
+  private googleClient: OAuth2Client;
   constructor(
+    private users: UsersService,
+    private jwt: JwtService,
+    private config: ConfigService,
     private usersService: UsersService,
     private readonly otpService: OtpService,
     private readonly sessionService: SessionService,
-    private jwt: JwtService,
-    private config: ConfigService,
-  ) {}
+  ) {
+    const gid = this.config.get<string>('GOOGLE_CLIENT_ID');
+    if (!gid) {
+      console.warn('GOOGLE_CLIENT_ID not configured - Google login will fail');
+    }
+    this.googleClient = new OAuth2Client(gid);
+  }
 
   /**
    * Main login entry: supports PHONE or EMAIL types
@@ -32,15 +38,12 @@ export class AuthService {
       case AuthProvider.PHONE:
         if (!dto.phone) throw new BadRequestException('phone is required');
         return this.loginWithPhone(dto.phone, dto.deviceId, dto.ip);
+        break;
       case AuthProvider.EMAIL:
         if (!dto.email) throw new BadRequestException('email is required');
         // password may be optional if you want to allow create-without-password
-        return this.loginWithEmail(
-          dto.email,
-          dto.password,
-          dto.deviceId,
-          dto.ip,
-        );
+        return this.loginWithEmail(dto.email, dto.password, dto.deviceId, dto.ip);
+        break;
       default:
         throw new UnauthorizedException('Unsupported provider');
     }
@@ -53,11 +56,7 @@ export class AuthService {
    * - create OTP and send via SmsService
    * - return otpId and userId (client will call verifyOtp)
    */
-  private async loginWithPhone(
-    phone: string,
-    deviceInfo?: string,
-    ip?: string,
-  ) {
+  private async loginWithPhone(phone: string, deviceInfo?: string, ip?: string) {
     const normalized = this.normalizePhone(phone);
     let user = await this.usersService.findByPhone(normalized);
 
@@ -92,12 +91,7 @@ export class AuthService {
    * - if user exists: require password and validate
    * - on success: return signed tokens
    */
-  private async loginWithEmail(
-    email: string,
-    password?: string,
-    deviceInfo?: string,
-    ip?: string,
-  ) {
+  private async loginWithEmail(email: string, password?: string, deviceInfo?: string, ip?: string) {
     const normalized = this.normalizeEmail(email);
     let user = await this.usersService.findByEmail(normalized);
 
@@ -151,9 +145,7 @@ export class AuthService {
 
     // If provider was phone_otp and user has no provider set, you may want to update provider
     if (!user.provider || user.provider === AuthProvider.PHONE) {
-      await this.usersService
-        .update(user.id, { provider: 'phone' } as any)
-        .catch(() => {});
+      await this.usersService.update(user.id, { provider: 'phone' } as any).catch(() => {});
     }
 
     return this.signTokensForUser(user, deviceInfo, ip);
@@ -163,11 +155,7 @@ export class AuthService {
    * Creates the accessToken (JWT) and refresh token (via SessionService).
    * Assumes SessionService.createSession returns { refreshToken, expiresAt }.
    */
-  private async signTokensForUser(
-    user: User,
-    deviceInfo?: string,
-    ip?: string,
-  ) {
+  private async signTokensForUser(user: User, deviceInfo?: string, ip?: string) {
     // build JWT payload (customize as needed)
     const payload = {
       sub: user.id,
@@ -181,14 +169,12 @@ export class AuthService {
     });
 
     // create refresh session (sessionService returns plain token)
-    const { refreshToken, expiresAt } = await this.sessionService.createSession(
-      {
-        userId: user.id,
-        deviceInfo,
-        ip,
-        ttlDays: 30,
-      },
-    );
+    const { refreshToken, expiresAt } = await this.sessionService.createSession({
+      userId: user.id,
+      deviceInfo,
+      ip,
+      ttlDays: 30,
+    });
 
     // Optionally update lastLogin timestamp on user
     try {
@@ -225,5 +211,81 @@ export class AuthService {
     // clone shallow
     const { passwordHash, ...rest } = user as any;
     return rest;
+  }
+
+  async socialLogin(dto: SocialLoginDto) {
+    const { type, idToken } = dto;
+    let providerId = null;
+    let email = null;
+    let emailVerified = false;
+    let name = null;
+    let picture = null;
+
+    if (type === AuthProvider.GOOGLE) {
+      let ticket;
+      try {
+        ticket = await this.googleClient.verifyIdToken({
+          idToken,
+          audience: this.config.get<string>('GOOGLE_CLIENT_ID'),
+        });
+      } catch (err) {
+        console.debug('Google token verify failed', err);
+        throw new UnauthorizedException('Invalid Google token');
+      }
+
+      const payload = ticket.getPayload();
+      if (!payload) throw new UnauthorizedException('Invalid Google token payload');
+
+      providerId = payload['sub'];
+      email = payload['email'];
+      emailVerified = payload['email_verified'] === 'true' || payload['email_verified'] === true;
+      name = payload['name'] ?? null;
+      picture = payload['picture'] ?? null;
+    } else if (type === AuthProvider.APPLE) {
+    }
+
+    let user: User | null = null;
+    if (providerId) {
+      user = await this.users.findByProviderId(type, providerId);
+    }
+    if (!user) {
+      user = await this.users.create({
+        name,
+        providerId,
+        email: email ?? '',
+        isEmailVerified: emailVerified,
+        provider: 'google',
+      } as any);
+    } else {
+      const updates: any = {};
+      if (!user.providerId && providerId) updates.providerId = providerId;
+      if (!user.isEmailVerified && emailVerified) updates.isEmailVerified = true;
+      if (name && user.name !== name) updates.name = name;
+      if (Object.keys(updates).length) await this.users.update(user.id, updates);
+    }
+  }
+
+  //   private async loginWithPhone(phone: string) {
+  //     let user = await this.users.findByPhone(phone);
+  //     if (!user) {
+  //       user = await this.users.create({ phone } as any);
+  //       await this.users.update(user.id, { provider: 'phone' });
+  //     }
+  //     return this.signJwt(user);
+  //   }
+
+  //   private async loginWithEmail(email: string, password: string) {
+  //     let user = await this.users.findByEmail(email);
+  //     if (!user) {
+  //       user = await this.users.create({ email, password: null } as any);
+  //       await this.users.update(user.id, { provider: 'email_otp' });
+  //     }
+  //     return this.signJwt(user);
+  //   }
+
+  private signJwt(user: any) {
+    const payload = { sub: user.id, email: user.email ?? null, provider: user.provider };
+    const token = this.jwt.sign(payload);
+    return { access_token: token };
   }
 }
