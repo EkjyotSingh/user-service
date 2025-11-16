@@ -24,18 +24,18 @@ export class UserSession {
   @Column({ nullable: true })
   ip?: string;
 
-  @Column({ type: 'text', nullable: true, name: "user_agent" })
+  @Column({ type: 'text', nullable: true, name: 'user_agent' })
   userAgent?: string;
 
-  @Column({ default: true, name: "is_active" })
+  @Column({ default: true, name: 'is_active' })
   isActive: boolean;
 
-  @Column({ type: 'timestamp', nullable: true, name: "expired_at" })
+  @Column({ type: 'timestamp', nullable: true, name: 'expired_at' })
   expiresAt?: Date;
-  
-  @CreateDateColumn({ type: 'timestamp', name: "created_at" })
+
+  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamp', name: "updated_at" })
+  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
   updatedAt: Date;
 }

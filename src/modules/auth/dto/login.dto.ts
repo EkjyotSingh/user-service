@@ -21,7 +21,9 @@ export class LoginDto {
   @ValidateIf((o) => o.type === AuthProvider.PHONE)
   @IsNotEmpty({ message: 'Phone is required' })
   @IsString()
-  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/[\s\-()]/g, '').trim() : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/[\s\-()]/g, '').trim() : value,
+  )
   @Matches(/^\+?[1-9]\d{7,14}$/, { message: 'phone must be in E.164 format or digits only' })
   phone?: string;
 
@@ -48,4 +50,25 @@ export class LoginDto {
   @IsString()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   password?: string;
+}
+
+export class SocialLoginDto {
+  @ApiProperty({
+    description: 'Login type / provider',
+    enum: AuthProvider,
+    example: AuthProvider.GOOGLE,
+  })
+  @IsNotEmpty()
+  @IsEnum(AuthProvider)
+  type: AuthProvider;
+
+  @ApiProperty({ description: 'Device ID', example: '12344322' })
+  @IsString()
+  @IsNotEmpty()
+  deviceId: string;
+
+  @ApiProperty({ description: 'Google ID token from client', example: 'eyJhbGci...' })
+  @ValidateIf((o) => o.type === AuthProvider.GOOGLE)
+  @IsString()
+  idToken: string;
 }
