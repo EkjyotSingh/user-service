@@ -5,9 +5,8 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  OneToMany,
+  BaseEntity,
 } from 'typeorm';
-import { UserSession } from './user-session.entity';
 
 @Entity('users')
 export class User extends BaseEntity {

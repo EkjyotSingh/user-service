@@ -38,4 +38,8 @@ export class UsersService {
       return repo.save(user);
     });
   }
+
+  async findByProviderId(provider: AuthProvider, providerId: string): Promise<User | null> {
+    return this.usersRepo.findOne({ where: { provider, providerId } });
+  }
 }

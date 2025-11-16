@@ -8,7 +8,6 @@ import { OtpService } from 'src/otp/otp.service';
 import { SessionService } from 'src/session/session.service';
 import * as bcrypt from 'bcrypt';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
-import { User } from '../users/entities/user.entity';
 import { OAuth2Client } from 'google-auth-library';
 import { User } from '../users/entities/user.entity';
 
