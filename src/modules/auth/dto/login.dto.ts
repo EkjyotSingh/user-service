@@ -1,4 +1,12 @@
-import { IsEnum, IsString, ValidateIf, IsNotEmpty, Matches, IsEmail } from 'class-validator';
+import {
+  IsEnum,
+  IsString,
+  ValidateIf,
+  IsNotEmpty,
+  Matches,
+  IsEmail,
+  IsOptional,
+} from 'class-validator';
 import { AuthProvider } from '../enums/auth-provider.enum';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -21,8 +29,12 @@ export class LoginDto {
   @ValidateIf((o) => o.type === AuthProvider.PHONE)
   @IsNotEmpty({ message: 'Phone is required' })
   @IsString()
-  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/[\s\-()]/g, '').trim() : value))
-  @Matches(/^\+?[1-9]\d{7,14}$/, { message: 'phone must be in E.164 format or digits only' })
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/[\s\-()]/g, '').trim() : value,
+  )
+  @Matches(/^\+?[1-9]\d{7,14}$/, {
+    message: 'phone must be in E.164 format or digits only',
+  })
   phone?: string;
 
   // -------- Email (required for email_password) --------
@@ -34,7 +46,9 @@ export class LoginDto {
   @ValidateIf((o) => o.type === AuthProvider.EMAIL)
   @IsNotEmpty({ message: 'Email is required' })
   @IsEmail({}, { message: 'Email is not valid' })
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   email?: string;
 
   // -------- Password (required for email_password) --------
@@ -48,4 +62,12 @@ export class LoginDto {
   @IsString()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   password?: string;
+
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  ip?: string;
 }

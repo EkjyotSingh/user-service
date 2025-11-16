@@ -1,9 +1,15 @@
 import { AuthProvider } from '../../auth/enums/auth-provider.enum';
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
-import { UserSession } from './user-session.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  BaseEntity,
+} from 'typeorm';
 
 @Entity('users')
-export class User {
+export class User extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -25,16 +31,16 @@ export class User {
   })
   provider: AuthProvider;
 
-  @Column({default: false, name: 'is_email_verified'})
+  @Column({ default: false, name: 'is_email_verified' })
   isEmailVerified: boolean;
 
-  @Column({default: false, name: 'is_phone_verified'})
+  @Column({ default: false, name: 'is_phone_verified' })
   isPhoneVerified: boolean;
 
-  @Column({default: false, name: 'is_deleted'})
+  @Column({ default: false, name: 'is_deleted' })
   isDeleted: boolean;
 
-  @Column({default: 0, name: 'failed_login_count'})
+  @Column({ default: 0, name: 'failed_login_count' })
   failedLoginCount: number;
 
   @Column({
@@ -44,12 +50,9 @@ export class User {
   })
   lastLoginAt: Date;
 
-  @CreateDateColumn({name: "created_at"})
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({name: "updated_at"})
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
-
-  @OneToMany(() => UserSession, (s) => s.user)
-  sessions: UserSession[];
 }
