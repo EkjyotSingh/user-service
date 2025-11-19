@@ -1,12 +1,4 @@
-import {
-  IsEnum,
-  IsString,
-  ValidateIf,
-  IsNotEmpty,
-  Matches,
-  IsEmail,
-  IsOptional,
-} from 'class-validator';
+import { IsEnum, IsString, ValidateIf, IsNotEmpty, Matches, IsEmail } from 'class-validator';
 import { AuthProvider } from '../enums/auth-provider.enum';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -58,14 +50,6 @@ export class LoginDto {
   @IsString()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   password?: string;
-
-  @IsOptional()
-  @IsString()
-  deviceId?: string;
-
-  @IsOptional()
-  @IsString()
-  ip?: string;
 }
 
 export class SocialLoginDto {
@@ -77,11 +61,6 @@ export class SocialLoginDto {
   @IsNotEmpty()
   @IsEnum(AuthProvider)
   type: AuthProvider;
-
-  @ApiProperty({ description: 'Device ID', example: '12344322' })
-  @IsString()
-  @IsNotEmpty()
-  deviceId: string;
 
   @ApiProperty({ description: 'Google ID token from client', example: 'eyJhbGci...' })
   @ValidateIf((o) => o.type === AuthProvider.GOOGLE)

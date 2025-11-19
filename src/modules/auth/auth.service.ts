@@ -4,10 +4,10 @@ import { LoginDto, SocialLoginDto } from './dto/login.dto';
 import { AuthProvider } from './enums/auth-provider.enum';
 import { UsersService } from '../users/users.service';
 import { ConfigService } from '@nestjs/config';
-import { OtpService } from 'src/otp/otp.service';
-import { SessionService } from 'src/session/session.service';
+import { OtpService } from 'src/modules/otp/otp.service';
+import { SessionService } from 'src/modules/session/session.service';
 import * as bcrypt from 'bcrypt';
-import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { OAuth2Client } from 'google-auth-library';
 import { User } from '../users/entities/user.entity';
 
@@ -32,55 +32,44 @@ export class AuthService {
   /**
    * Main login entry: supports PHONE or EMAIL types
    */
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, deviceId?: string, ip?: string) {
     switch (dto.type) {
       case AuthProvider.PHONE:
-        if (!dto.phone) throw new BadRequestException('phone is required');
-        return this.loginWithPhone(dto.phone, dto.deviceId, dto.ip);
-        break;
+        return this.loginWithPhone(dto.phone!);
       case AuthProvider.EMAIL:
-        if (!dto.email) throw new BadRequestException('email is required');
-        // password may be optional if you want to allow create-without-password
-        return this.loginWithEmail(dto.email, dto.password, dto.deviceId, dto.ip);
-        break;
+        return this.loginWithEmail(dto.email!, dto.password!, deviceId, ip);
       default:
         throw new UnauthorizedException('Unsupported provider');
     }
   }
 
-  /**
-   * Phone-first flow:
-   * - normalize phone externally before calling this
-   * - ensure user exists (create if not)
-   * - create OTP and send via SmsService
-   * - return otpId and userId (client will call verifyOtp)
-   */
-  private async loginWithPhone(phone: string, deviceInfo?: string, ip?: string) {
-    const normalized = this.normalizePhone(phone);
-    let user = await this.usersService.findByPhone(normalized);
+  private async loginWithPhone(phone: string) {
+    let user = await this.usersService.findByPhone(phone);
 
     if (!user) {
-      // create minimal user record; mark provider as phone (or phone_otp depending on your scheme)
       user = await this.usersService.create({
-        phone: normalized,
-        provider: 'phone_otp',
+        phone: phone,
+        provider: AuthProvider.PHONE,
       } as any);
     }
 
-    // Create OTP (returns { otpId, code } where code is plaintext for sending)
     const { otpId, code } = await this.otpService.createOtp(user.id, 'login');
-
-    // Send OTP (SmsService should implement sendOtp(phone, code, purpose))
-    // Wrap in try/catch — if sending fails you may want to invalidate OTP
+    console.log('code', code);
     try {
-      // await this.smsService.sendOtp(normalized, code, 'login');
+      await this.otpService.addOtpJob({
+        phone: phone,
+        code,
+        purpose: 'login',
+        userId: user.id,
+        otpId,
+      });
     } catch (err) {
-      // invalidate OTP to be safe
+      // Invalidate OTP if queueing fails
       await this.otpService.invalidateOtp(otpId);
-      throw new BadRequestException('Failed to send OTP');
+      throw new BadRequestException('Error in sending OTP, Please try after sometime');
     }
 
-    return { otpId, userId: user.id, message: 'OTP sent' };
+    return { otpId, message: 'OTP sent successfully' };
   }
 
   /**
@@ -90,84 +79,61 @@ export class AuthService {
    * - if user exists: require password and validate
    * - on success: return signed tokens
    */
-  private async loginWithEmail(email: string, password?: string, deviceInfo?: string, ip?: string) {
-    const normalized = this.normalizeEmail(email);
-    let user = await this.usersService.findByEmail(normalized);
+  private async loginWithEmail(email: string, password: string, deviceInfo?: string, ip?: string) {
+    let user = await this.usersService.findByEmailWithPassword(email);
 
     if (!user) {
-      // create new user
       const passwordHash = password ? await bcrypt.hash(password, 10) : null;
       user = await this.usersService.create({
-        email: normalized,
-        passwordHash,
-        provider: password ? 'email_pwd' : 'email_otp', // choose appropriate provider tag
+        email,
+        password: passwordHash ?? null,
+        provider: AuthProvider.EMAIL,
       } as any);
+      const { otpId, code } = await this.otpService.createOtp(
+        user.id,
+        'login',
+        this.config.get<number>('OTP_TTL_MINUTES'),
+      );
 
-      // If you created user with no password, consider sending verification / onboarding email
-      if (!password) {
-        // if (this.emailService?.sendWelcome) {
-        //   await this.emailService
-        //     .sendWelcome(user.email, user.id)
-        //     .catch(() => {});
-        // }
-        // if you want to allow immediate token issuance for created user, you can sign tokens here:
-        return this.signTokensForUser(user, deviceInfo, ip);
+      try {
+        await this.otpService.addOtpJob({
+          email: email,
+          code,
+          purpose: 'login',
+          userId: user.id,
+          otpId,
+        });
+      } catch (err) {
+        // Invalidate OTP if queueing fails
+        await this.otpService.invalidateOtp(otpId);
+        throw new BadRequestException('Error in sending OTP, Please try after sometime');
       }
 
-      // if password was provided and set at creation, sign tokens
+      return { otpId, message: 'OTP sent successfully' };
+    } else {
+      if (!user.isEmailVerified)
+        throw new UnauthorizedException('Please verify your email to login');
+
+      const passwordOk = await bcrypt.compare(password ?? '', user.password);
+      if (!passwordOk) throw new UnauthorizedException('Invalid credentials');
+
       return this.signTokensForUser(user, deviceInfo, ip);
     }
-
-    // existing user: must verify password if stored
-    if (!user.password) {
-      // no password on user (maybe created via otp previously) -> require password reset or OTP flow
-      throw new UnauthorizedException(
-        'Password required for this account. Use password reset or email OTP flow.',
-      );
-    }
-
-    const passwordOk = await bcrypt.compare(password ?? '', user.password);
-    if (!passwordOk) throw new UnauthorizedException('Invalid credentials');
-
-    return this.signTokensForUser(user, deviceInfo, ip);
-  }
-
-  /**
-   * Verify OTP flow: client sends otpId + code (or userId + code depending on your DTO)
-   * On success we issue access and refresh tokens.
-   */
-  async verifyOtp(dto: VerifyOtpDto, deviceInfo?: string, ip?: string) {
-    const res = await this.otpService.verifyOtp(dto.otpId, dto.code);
-    // res contains { userId, purpose } per OtpService implementation
-    const user = await this.usersService.findById(res.userId);
-    if (!user) throw new BadRequestException('User not found');
-
-    // If provider was phone_otp and user has no provider set, you may want to update provider
-    if (!user.provider || user.provider === AuthProvider.PHONE) {
-      await this.usersService.update(user.id, { provider: 'phone' } as any).catch(() => {});
-    }
-
-    return this.signTokensForUser(user, deviceInfo, ip);
   }
 
   /**
    * Creates the accessToken (JWT) and refresh token (via SessionService).
    * Assumes SessionService.createSession returns { refreshToken, expiresAt }.
    */
-  private async signTokensForUser(user: User, deviceInfo?: string, ip?: string) {
-    // build JWT payload (customize as needed)
+  async signTokensForUser(user: User, deviceInfo?: string, ip?: string) {
     const payload = {
       sub: user.id,
       email: user.email ?? null,
       phone: user.phone ?? null,
-      // add minimal claims only
     };
 
-    const accessToken = await this.jwt.signAsync(payload, {
-      expiresIn: '15m',
-    });
+    const accessToken = await this.jwt.signAsync(payload);
 
-    // create refresh session (sessionService returns plain token)
     const { refreshToken, expiresAt } = await this.sessionService.createSession({
       userId: user.id,
       deviceInfo,
@@ -175,50 +141,257 @@ export class AuthService {
       ttlDays: 30,
     });
 
-    // Optionally update lastLogin timestamp on user
     try {
       await this.usersService.update(user.id, {
         lastLoginAt: new Date(),
       } as any);
-    } catch (e) {
-      // ignore update failure — not critical
-    }
+    } catch (e) {}
 
     return {
       accessToken,
       refreshToken,
       refreshExpiresAt: expiresAt,
-      user: this.stripSensitive(user),
+      user: user,
+      profileCompletionRequired: !user.profileCompleted,
     };
   }
 
-  /* -------------------- helpers -------------------- */
+  /**
+   * Complete user profile after first login
+   * This is called when a user logs in for the first time and needs to fill out their profile
+   */
+  async completeProfile(userId: string, dto: CompleteProfileDto) {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
 
-  private normalizeEmail(email: string) {
-    return email.trim().toLowerCase();
+    if (user.profileCompleted) {
+      throw new BadRequestException('Profile already completed');
+    }
+
+    const updateData: any = {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      isAdvisor: dto.isAdvisor,
+      termsAcceptedAt: new Date(),
+      profileCompleted: true,
+    };
+
+    if (user.provider === AuthProvider.PHONE) {
+      const existingUserByEmail = await this.usersService.findByEmail(dto.email!);
+      if (existingUserByEmail && existingUserByEmail.id !== userId) {
+        throw new BadRequestException('Email is already registered');
+      }
+      updateData.email = dto.email;
+    } else if (user.provider === AuthProvider.EMAIL || user.provider === AuthProvider.GOOGLE) {
+      const existingUserByPhone = await this.usersService.findByPhone(dto.phone!);
+      if (existingUserByPhone && existingUserByPhone.id !== userId) {
+        throw new BadRequestException('Phone number is already registered');
+      }
+      updateData.phone = dto.phone;
+    }
+    // Social login or other providers - allow both updates with uniqueness checks
+    else {
+      if (dto.email && dto.email !== user.email) {
+        const existingUserByEmail = await this.usersService.findByEmail(dto.email);
+        if (existingUserByEmail && existingUserByEmail.id !== userId) {
+          throw new BadRequestException('Email is already registered');
+        }
+        updateData.email = dto.email;
+      }
+
+      if (dto.phone && dto.phone !== user.phone) {
+        const existingUserByPhone = await this.usersService.findByPhone(dto.phone);
+        if (existingUserByPhone && existingUserByPhone.id !== userId) {
+          throw new BadRequestException('Phone number is already registered');
+        }
+        updateData.phone = dto.phone;
+      }
+    }
+
+    // Update user profile
+    await this.usersService.update(userId, updateData);
+
+    // Fetch updated user
+    const updatedUser = await this.usersService.findById(userId);
+    if (!updatedUser) {
+      throw new BadRequestException('Failed to update user');
+    }
+
+    return {
+      message: 'Profile completed successfully',
+      user: updatedUser,
+    };
   }
 
-  private normalizePhone(phone: string) {
-    // implement E.164 normalization here; placeholder below:
-    // prefer using libphonenumber-js in your project
-    return phone.replace(/[^\d+]/g, '');
+  /**
+   * Request password reset: validates email exists and user signed up with email provider
+   * Sends OTP to user's email
+   */
+  async requestPasswordReset(email: string) {
+    // Find user by email
+    const user = await this.usersService.findByEmail(email);
+
+    if (!user) {
+      // Don't reveal if email exists - return success message anyway for security
+      return { message: 'If the email exists, a password reset code has been sent.' };
+    }
+
+    // Check if user signed up with email provider
+    if (user.provider !== AuthProvider.EMAIL) {
+      throw new BadRequestException(
+        `This email is registered with ${user.provider} provider. Password reset is only available for email-based accounts.`,
+      );
+    }
+
+    // Create OTP for password reset
+    const { otpId, code } = await this.otpService.createOtp(user.id, 'reset', 10); // 10 minutes expiry
+
+    // Add OTP sending job to queue
+    try {
+      await this.otpService.addOtpJob({
+        email: user.email!,
+        code,
+        purpose: 'reset',
+        userId: user.id,
+        otpId,
+      });
+    } catch (err) {
+      // Invalidate OTP if queueing fails
+      await this.otpService.invalidateOtp(otpId);
+      throw new BadRequestException('Failed to queue password reset code for sending');
+    }
+
+    // Return otpId (code should be sent via email, not returned)
+    return {
+      otpId,
+      message: 'Password reset code has been sent to your email.',
+    };
   }
 
-  private stripSensitive(user: User) {
-    // remove sensitive props before returning user to client
-    // adapt fields according to your User entity
-    // clone shallow
-    const { passwordHash, ...rest } = user as any;
-    return rest;
+  /**
+   * Verify password reset OTP: validates OTP and returns a reset token
+   * This is step 2 of the password reset flow
+   */
+  async verifyPasswordResetOtp(email: string, otpId: string, code: string) {
+    // Verify OTP
+    const otpResult: any = await this.otpService.verifyOtp(
+      otpId,
+      code,
+      undefined,
+      undefined,
+      email,
+      undefined,
+    );
+
+    // Verify OTP purpose is 'reset'
+    if (otpResult?.purpose !== 'reset') {
+      throw new BadRequestException('Invalid OTP purpose. This OTP is not for password reset.');
+    }
+
+    // Find user by userId from OTP
+    const user = await this.usersService.findById(otpResult?.userId);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // Verify email matches
+    if (user.email !== email) {
+      throw new BadRequestException('Email does not match the OTP recipient');
+    }
+
+    // Verify user signed up with email provider
+    if (user.provider !== AuthProvider.EMAIL) {
+      throw new BadRequestException(
+        `This account is registered with ${user.provider} provider. Password reset is only available for email-based accounts.`,
+      );
+    }
+
+    const now = Math.floor(Date.now() / 1000); // Current time in seconds (JWT iat format)
+    const resetToken = await this.jwt.signAsync(
+      {
+        sub: user.id,
+        email: user.email,
+        purpose: 'password-reset',
+        iat: now, // Issued at time - used to invalidate token after password reset
+      },
+      {
+        expiresIn: '15m',
+      },
+    );
+
+    return {
+      resetToken,
+      message: 'OTP verified successfully. You can now reset your password.',
+    };
   }
 
-  async socialLogin(dto: SocialLoginDto) {
+  /**
+   * Reset password: uses reset token to update user password
+   * This is step 3 of the password reset flow
+   */
+  async resetPassword(resetToken: string, newPassword: string) {
+    // Verify and decode reset token
+    let payload: any;
+    try {
+      payload = await this.jwt.verifyAsync(resetToken);
+    } catch (err) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    // Verify token purpose
+    if (payload.purpose !== 'password-reset') {
+      throw new BadRequestException('Invalid token purpose. This token is not for password reset.');
+    }
+
+    // Find user by userId from token
+    const user = await this.usersService.findById(payload.sub);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // Verify user signed up with email provider
+    if (user.provider !== AuthProvider.EMAIL) {
+      throw new BadRequestException(
+        `This account is registered with ${user.provider} provider. Password reset is only available for email-based accounts.`,
+      );
+    }
+
+    // Verify email matches token
+    if (user.email !== payload.email) {
+      throw new BadRequestException('Email does not match the reset token');
+    }
+
+    // Check if token has already been used (password was reset after token was issued)
+    if (user.lastPasswordResetAt && payload.iat) {
+      const tokenIssuedAt = new Date(payload.iat * 1000); // Convert seconds to milliseconds
+      if (user.lastPasswordResetAt > tokenIssuedAt) {
+        throw new BadRequestException(
+          'This reset token has already been used. Please request a new password reset.',
+        );
+      }
+    }
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update user password and invalidate the token by setting lastPasswordResetAt
+    await this.usersService.update(user.id, {
+      password: passwordHash,
+      lastPasswordResetAt: new Date(),
+    } as any);
+
+    return { message: 'Password has been reset successfully.' };
+  }
+
+  async socialLogin(dto: SocialLoginDto, deviceId?: string, ip?: string) {
     const { type, idToken } = dto;
-    let providerId = null;
-    let email = null;
+    let providerId: string | null = null;
+    let email: string | null = null;
     let emailVerified = false;
-    let name = null;
-    let picture = null;
+    let name: string | null = null;
+    let picture: string | null = null;
 
     if (type === AuthProvider.GOOGLE) {
       let ticket;
@@ -236,55 +409,69 @@ export class AuthService {
       if (!payload) throw new UnauthorizedException('Invalid Google token payload');
 
       providerId = payload['sub'];
-      email = payload['email'];
-      emailVerified = payload['email_verified'] === 'true' || payload['email_verified'] === true;
+      email = payload['email'] ?? null;
+      emailVerified = payload['email_verified'] === true;
       name = payload['name'] ?? null;
       picture = payload['picture'] ?? null;
+
+      if (!providerId) {
+        throw new UnauthorizedException('Missing provider ID in Google token');
+      }
     } else if (type === AuthProvider.APPLE) {
+      throw new BadRequestException('Apple login not implemented yet');
+    } else {
+      throw new BadRequestException('Unsupported social login provider');
     }
 
+    // First, try to find user by providerId
     let user: User | null = null;
     if (providerId) {
       user = await this.users.findByProviderId(type, providerId);
     }
+
+    // If user not found by providerId, check if email already exists
+    if (!user && email) {
+      const existingUserByEmail = await this.usersService.findByEmail(email);
+      if (existingUserByEmail) {
+        // If email exists with different provider, throw error
+        if (existingUserByEmail.provider !== type) {
+          throw new BadRequestException(
+            `Email is already linked to another provider (${existingUserByEmail.provider}). Each email can only be linked to one provider.`,
+          );
+        }
+        // Same provider but missing providerId - link it
+        await this.usersService.update(existingUserByEmail.id, {
+          providerId,
+        } as any);
+        user = existingUserByEmail;
+      }
+    }
+
+    // Create new user if still not found
     if (!user) {
       user = await this.users.create({
         name,
         providerId,
-        email: email ?? '',
+        email: email,
         isEmailVerified: emailVerified,
-        provider: 'google',
+        provider: type,
       } as any);
     } else {
+      // Update existing user with latest info
       const updates: any = {};
-      if (!user.providerId && providerId) updates.providerId = providerId;
-      if (!user.isEmailVerified && emailVerified) updates.isEmailVerified = true;
-      if (name && user.name !== name) updates.name = name;
-      if (Object.keys(updates).length) await this.users.update(user.id, updates);
+      if (providerId && !user.providerId) updates.providerId = providerId;
+      if (emailVerified && !user.isEmailVerified) updates.isEmailVerified = true;
+      if (email && !user.email) {
+        updates.email = email;
+      }
+      if (Object.keys(updates).length > 0) {
+        await this.users.update(user.id, updates);
+        // Fetch updated user
+        user = await this.usersService.findById(user.id);
+      }
     }
-  }
 
-  //   private async loginWithPhone(phone: string) {
-  //     let user = await this.users.findByPhone(phone);
-  //     if (!user) {
-  //       user = await this.users.create({ phone } as any);
-  //       await this.users.update(user.id, { provider: 'phone' });
-  //     }
-  //     return this.signJwt(user);
-  //   }
-
-  //   private async loginWithEmail(email: string, password: string) {
-  //     let user = await this.users.findByEmail(email);
-  //     if (!user) {
-  //       user = await this.users.create({ email, password: null } as any);
-  //       await this.users.update(user.id, { provider: 'email_otp' });
-  //     }
-  //     return this.signJwt(user);
-  //   }
-
-  private signJwt(user: any) {
-    const payload = { sub: user.id, email: user.email ?? null, provider: user.provider };
-    const token = this.jwt.sign(payload);
-    return { access_token: token };
+    // Return tokens
+    return this.signTokensForUser(user!, deviceId, ip);
   }
 }

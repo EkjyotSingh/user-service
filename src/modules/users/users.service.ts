@@ -22,21 +22,20 @@ export class UsersService {
   findByEmail(email: string) {
     return this.usersRepo.findOne({ where: { email } });
   }
+
+  findByEmailWithPassword(email: string) {
+    return this.usersRepo
+      .createQueryBuilder('user')
+      .where('user.email = :email', { email })
+      .addSelect('user.password')
+      .getOne();
+  }
   create(partial: Partial<User>) {
     const u = this.usersRepo.create(partial);
     return this.usersRepo.save(u);
   }
   update(id: string, partial: Partial<User>) {
     return this.usersRepo.update(id, partial);
-  }
-
-  // Example transactional create
-  async createUserWithDefaults(partial: Partial<User>) {
-    return this.dataSource.transaction(async (manager) => {
-      const repo = manager.getRepository(User);
-      const user = repo.create(partial);
-      return repo.save(user);
-    });
   }
 
   async findByProviderId(provider: AuthProvider, providerId: string): Promise<User | null> {

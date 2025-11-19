@@ -13,13 +13,16 @@ export class User extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ nullable: true })
-  name?: string;
+  @Column({ nullable: true, name: 'first_name' })
+  firstName?: string;
+
+  @Column({ nullable: true, name: 'last_name' })
+  lastName?: string;
 
   @Column({ nullable: true, unique: true })
   email?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, select: false })
   password?: string;
 
   @Column({ nullable: true, unique: true })
@@ -52,6 +55,29 @@ export class User extends BaseEntity {
     nullable: true,
   })
   lastLoginAt: Date;
+
+  @Column({ default: false, name: 'is_advisor' })
+  isAdvisor: boolean;
+
+  @Column({
+    type: 'timestamp',
+    name: 'terms_accepted_at',
+    nullable: true,
+  })
+  termsAcceptedAt?: Date;
+
+  @Column({ default: false, name: 'profile_completed' })
+  profileCompleted: boolean;
+
+  @Column({ default: false, name: 'questionnaire_completed' })
+  questionnaireCompleted: boolean;
+
+  @Column({
+    type: 'timestamp',
+    name: 'last_password_reset_at',
+    nullable: true,
+  })
+  lastPasswordResetAt?: Date;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
