@@ -34,16 +34,16 @@ export class UserAnswer extends BaseEntity {
   @JoinColumn({ name: 'question_id' })
   question: Question;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'text_answer' })
   textAnswer?: string;
 
-  @Column({ type: 'json', nullable: true })
+  @Column({ type: 'json', nullable: true, name: 'selected_options' })
   selectedOptions?: string[]; // Array of option IDs for multiple choice
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'file_url' })
   fileUrl?: string; // For file uploads
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'file_name' })
   fileName?: string;
 
   @CreateDateColumn({ name: 'created_at' })

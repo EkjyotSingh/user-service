@@ -123,29 +123,32 @@ export class AuthService {
 
   /**
    * Creates the accessToken (JWT) and refresh token (via SessionService).
-   * Assumes SessionService.createSession returns { refreshToken, expiresAt }.
+   * Assumes SessionService.createSession returns { refreshToken, expiresAt, sessionId }.
+   * Includes sessionId (jti) in JWT to link token to session for validation.
    */
   async signTokensForUser(user: User, deviceInfo?: string, ip?: string) {
-    const payload = {
-      sub: user.id,
-      email: user.email ?? null,
-      phone: user.phone ?? null,
-    };
-
-    const accessToken = await this.jwt.signAsync(payload);
-
-    const { refreshToken, expiresAt } = await this.sessionService.createSession({
+    // Create session first to get session ID
+    const { refreshToken, expiresAt, sessionId } = await this.sessionService.createSession({
       userId: user.id,
       deviceInfo,
       ip,
       ttlDays: 30,
     });
 
+    const payload = {
+      sub: user.id,
+      email: user.email ?? null,
+      phone: user.phone ?? null,
+      jti: sessionId, // JWT ID - links token to session for validation
+    };
+
+    const accessToken = await this.jwt.signAsync(payload);
+
     try {
       await this.usersService.update(user.id, {
         lastLoginAt: new Date(),
       } as any);
-    } catch (e) {}
+    } catch (e) { }
 
     return {
       accessToken,
@@ -154,6 +157,18 @@ export class AuthService {
       user: user,
       profileCompletionRequired: !user.profileCompleted,
     };
+  }
+
+  /**
+   * Logout user - revoke session(s)
+   * If refreshToken is provided, revoke only that session
+   * Otherwise, revoke all sessions for the user
+   */
+  async logout(userId: string) {
+
+    // Revoke all sessions for the user
+    await this.sessionService.revokeAllByUserId(userId);
+    return { success: true, message: 'Logged out successfully' };
   }
 
   /**

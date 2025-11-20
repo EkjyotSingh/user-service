@@ -21,7 +21,7 @@ export class QuestionnaireService {
     @InjectRepository(UserAnswer)
     private answerRepo: Repository<UserAnswer>,
     private usersService: UsersService,
-  ) {}
+  ) { }
 
   async getQuestionnaires(type?: QuestionnaireType) {
     const query = this.questionnaireRepo
@@ -115,20 +115,31 @@ export class QuestionnaireService {
 
     if (answer) {
       // Update existing answer
-      answer.textAnswer = dto.textAnswer;
-      answer.selectedOptions = dto.selectedOptions;
-      answer.fileUrl = dto.fileUrl;
-      answer.fileName = dto.fileName;
+      if (question.type === 'text' || question.type === 'textarea') {
+        answer.textAnswer = dto.textAnswer;
+      } else if (question.type === 'single_choice' || question.type === 'multiple_choice') {
+        answer.selectedOptions = dto.selectedOptions;
+      } else if (question.type === 'file_upload') {
+        answer.fileUrl = dto.fileUrl;
+        answer.fileName = dto.fileName;
+      }
     } else {
       // Create new answer
-      answer = this.answerRepo.create({
+      const answerData: Partial<UserAnswer> = {
         userId,
         questionId: dto.questionId,
-        textAnswer: dto.textAnswer,
-        selectedOptions: dto.selectedOptions,
-        fileUrl: dto.fileUrl,
-        fileName: dto.fileName,
-      });
+      };
+
+      if (question.type === 'text' || question.type === 'textarea') {
+        answerData.textAnswer = dto.textAnswer;
+      } else if (question.type === 'single_choice' || question.type === 'multiple_choice') {
+        answerData.selectedOptions = dto.selectedOptions;
+      } else if (question.type === 'file_upload') {
+        answerData.fileUrl = dto.fileUrl;
+        answerData.fileName = dto.fileName;
+      }
+
+      answer = this.answerRepo.create(answerData);
     }
 
     return this.answerRepo.save(answer);
@@ -219,12 +230,56 @@ export class QuestionnaireService {
     const answeredQuestions = answers.length;
     const progress = totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
 
+    // Get all unique step numbers and sort them
+    const stepNumbers = [...new Set(questionnaire.questions.map((q) => q.stepNumber))].sort(
+      (a, b) => a - b,
+    );
+    const totalSteps = stepNumbers.length;
+
+    // Create a map of question IDs to answers for quick lookup
+    const answersMap = new Map(answers.map((answer) => [answer.questionId, answer]));
+
+    // Track which steps are completed and which questions are answered per step
+    const stepStatus = stepNumbers.map((stepNum) => {
+      const stepQuestions = questionnaire.questions.filter((q) => q.stepNumber === stepNum);
+      const stepRequiredQuestions = stepQuestions.filter((q) => q.isRequired);
+      const answeredInStep = stepQuestions.filter((q) => answersMap.has(q.id));
+      const requiredAnswered = stepRequiredQuestions.filter((q) => answersMap.has(q.id));
+
+      // A step is complete if all required questions in that step are answered
+      const isStepCompleted =
+        stepRequiredQuestions.length > 0
+          ? requiredAnswered.length === stepRequiredQuestions.length
+          : answeredInStep.length === stepQuestions.length;
+
+      return {
+        stepNumber: stepNum,
+        isCompleted: isStepCompleted,
+        totalQuestions: stepQuestions.length,
+        answeredQuestions: answeredInStep.length,
+        requiredQuestions: stepRequiredQuestions.length,
+        requiredAnswered: requiredAnswered.length,
+      };
+    });
+
+    // Find current step (first incomplete step)
+    const currentStep =
+      stepStatus.find((step) => !step.isCompleted)?.stepNumber || stepNumbers[stepNumbers.length - 1];
+
+    // Check if all required questions are answered (questionnaire is complete)
+    const allRequiredQuestions = questionnaire.questions.filter((q) => q.isRequired);
+    const allRequiredAnswered = allRequiredQuestions.every((q) => answersMap.has(q.id));
+    const isCompleted = allRequiredAnswered;
+
     return {
       questionnaireId,
       totalQuestions,
       answeredQuestions,
       progress: Math.round(progress),
-      isCompleted: answeredQuestions === totalQuestions,
+      isCompleted,
+      totalSteps,
+      currentStep,
+      stepStatus,
     };
   }
 

@@ -1,7 +1,8 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Optional, Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../../modules/users/users.service';
+import { SessionService } from '../../modules/session/session.service';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -9,7 +10,10 @@ export class JwtAuthGuard implements CanActivate {
     private jwtService: JwtService,
     private configService: ConfigService,
     private usersService: UsersService,
-  ) {}
+    @Optional()
+    @Inject(SessionService)
+    private sessionService?: SessionService,
+  ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -22,9 +26,19 @@ export class JwtAuthGuard implements CanActivate {
     try {
       const payload = await this.jwtService.verifyAsync(token);
       const userId = payload.sub;
+      const sessionId = payload.jti; // JWT ID - session ID from token
 
       if (!userId) {
         throw new UnauthorizedException('Invalid token payload');
+      }
+
+      // Verify session is still active (if sessionId is present and SessionService is available)
+      // This ensures tokens are invalidated after logout
+      if (sessionId && this.sessionService) {
+        const isSessionActive = await this.sessionService.isSessionActive(sessionId);
+        if (!isSessionActive) {
+          throw new UnauthorizedException('Sesssion expired. Please login again.');
+        }
       }
 
       // Verify user exists in database
@@ -45,7 +59,7 @@ export class JwtAuthGuard implements CanActivate {
       if (err instanceof UnauthorizedException) {
         throw err;
       }
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new UnauthorizedException('Sesssion expired. Please login again.');
     }
   }
 

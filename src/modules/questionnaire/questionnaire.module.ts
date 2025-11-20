@@ -10,13 +10,16 @@ import { Question } from './entities/question.entity';
 import { QuestionOption } from './entities/question-option.entity';
 import { UserAnswer } from './entities/user-answer.entity';
 import { UsersModule } from '../users/users.module';
+import { SessionModule } from '../session/session.module';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { S3StorageService } from '../../common/services/s3-storage.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Questionnaire, Question, QuestionOption, UserAnswer]),
     ConfigModule,
     UsersModule,
+    SessionModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -27,7 +30,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     }),
   ],
   controllers: [QuestionnaireController],
-  providers: [QuestionnaireService, QuestionnaireSeeder, JwtAuthGuard],
+  providers: [QuestionnaireService, QuestionnaireSeeder, JwtAuthGuard, S3StorageService],
   exports: [QuestionnaireService, QuestionnaireSeeder],
 })
-export class QuestionnaireModule {}
+export class QuestionnaireModule { }
