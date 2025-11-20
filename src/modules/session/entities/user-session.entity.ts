@@ -2,24 +2,31 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  ManyToOne,
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  BaseEntity,
 } from 'typeorm';
-import { User } from './user.entity';
 
 @Entity('user_sessions')
-@Index(['user', 'deviceId'])
-export class UserSession {
+export class UserSession extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => User, (u) => u.sessions, { onDelete: 'CASCADE' })
-  user: User;
+  @Index()
+  @Column()
+  userId: string;
 
-  @Column({ length: 128, name: 'device_id' })
+  @Index()
+  @Column({ length: 128, name: 'device_id', nullable: true })
   deviceId: string;
+
+  /**
+   * bcrypt hash of the random part (not of the full token)
+   * Use token format: "<id>.<random>" where id == this.id
+   */
+  @Column({ name: 'token_hash' })
+  tokenHash: string;
 
   @Column({ nullable: true })
   ip?: string;
@@ -30,8 +37,8 @@ export class UserSession {
   @Column({ default: true, name: 'is_active' })
   isActive: boolean;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'expired_at' })
-  expiresAt?: Date;
+  @Column({ type: 'timestamp', name: 'expires_at' })
+  expiresAt: Date;
 
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;

@@ -3,8 +3,12 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { OtpModule } from './modules/otp/otp.module';
+import { SessionModule } from './modules/session/session.module';
+import { QuestionnaireModule } from './modules/questionnaire/questionnaire.module';
 
 @Module({
   imports: [
@@ -27,8 +31,24 @@ import { AuthModule } from './modules/auth/auth.module';
         timezone: 'Z',
       }),
     }),
+
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          host: config.get<string>('REDIS_HOST') || 'localhost',
+          port: config.get<number>('REDIS_PORT') || 6379,
+          password: config.get<string>('REDIS_PASSWORD'),
+        },
+      }),
+    }),
+
     UsersModule,
     AuthModule,
+    OtpModule,
+    SessionModule,
+    QuestionnaireModule,
   ],
 
   controllers: [AppController],

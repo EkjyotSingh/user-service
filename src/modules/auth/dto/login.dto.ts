@@ -62,11 +62,6 @@ export class SocialLoginDto {
   @IsEnum(AuthProvider)
   type: AuthProvider;
 
-  @ApiProperty({ description: 'Device ID', example: '12344322' })
-  @IsString()
-  @IsNotEmpty()
-  deviceId: string;
-
   @ApiProperty({ description: 'Google ID token from client', example: 'eyJhbGci...' })
   @ValidateIf((o) => o.type === AuthProvider.GOOGLE)
   @IsString()
