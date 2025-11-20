@@ -10,7 +10,7 @@ export class SessionService {
   constructor(
     @InjectRepository(UserSession)
     private readonly repo: Repository<UserSession>,
-  ) {}
+  ) { }
 
   /**
    * Create a session and return the plain refresh token to send to the user.
@@ -32,15 +32,16 @@ export class SessionService {
       deviceId: deviceInfo,
       ip,
       expiresAt,
+      isActive: true,
     });
     const saved = await this.repo.save(entity);
     const plainToken = `${saved.id}.${random}`;
-    return { refreshToken: plainToken, expiresAt: saved.expiresAt };
+    return { refreshToken: plainToken, expiresAt: saved.expiresAt, sessionId: saved.id };
   }
 
   /**
    * Validate a refresh token and return the session entity if valid.
-   * Also checks expiry and returns null if expired.
+   * Also checks expiry and active status.
    */
   async validateRefreshToken(plain: string) {
     const parts = plain.split('.');
@@ -48,6 +49,7 @@ export class SessionService {
     const [id, random] = parts;
     const session = await this.repo.findOne({ where: { id } });
     if (!session) return null;
+    if (!session.isActive) return null; // Session is not active (logged out)
     if (session.expiresAt.getTime() < Date.now()) {
       // optionally delete expired session
       await this.repo.delete(session.id);
@@ -58,15 +60,40 @@ export class SessionService {
     return session;
   }
 
+  /**
+   * Check if a session exists and is active
+   */
+  async isSessionActive(sessionId: string): Promise<boolean> {
+    const session = await this.repo.findOne({ where: { id: sessionId } });
+    if (!session) return false;
+    if (!session.isActive) return false; // Session is not active (logged out)
+    if (session.expiresAt.getTime() < Date.now()) {
+      // Session expired, mark as inactive
+      await this.repo.update(session.id, { isActive: false });
+      return false;
+    }
+    return true;
+  }
+
   async revokeById(id: string) {
-    return this.repo.delete({ id });
+    // Mark session as inactive instead of deleting (for audit trail)
+    return this.repo.update({ id }, { isActive: false });
   }
 
   async revokeByRefreshToken(plain: string) {
     const parts = plain.split('.');
     if (parts.length !== 2) return;
     const [id] = parts;
-    await this.repo.delete({ id });
+    // Mark session as inactive instead of deleting (for audit trail)
+    await this.repo.update({ id }, { isActive: false });
+  }
+
+  /**
+   * Revoke all sessions for a user (mark as inactive)
+   */
+  async revokeAllByUserId(userId: string) {
+    // Mark all sessions as inactive instead of deleting (for audit trail)
+    return this.repo.update({ userId }, { isActive: false });
   }
 
   /**
