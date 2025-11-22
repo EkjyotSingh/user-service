@@ -59,6 +59,19 @@ export class User extends BaseEntity {
   @Column({ default: false, name: 'is_advisor' })
   isAdvisor: boolean;
 
+  @Column({ nullable: true, unique: true })
+  username?: string;
+
+  @Column({
+    type: 'timestamp',
+    name: 'guidelines_accepted_at',
+    nullable: true,
+  })
+  guidelinesAcceptedAt?: Date;
+
+  @Column({ nullable: true })
+  avatar?: string;
+
   @Column({
     type: 'timestamp',
     name: 'terms_accepted_at',

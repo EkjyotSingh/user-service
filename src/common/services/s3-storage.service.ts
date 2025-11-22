@@ -89,6 +89,21 @@ export class S3StorageService {
     }
 
     /**
+     * Upload multiple files to S3
+     */
+    async uploadFiles(
+        files: any[],
+        folder: string = 'uploads',
+    ): Promise<Array<{ key: string; url: string; originalName: string }>> {
+        const uploadPromises = files.map(async (file) => {
+            const { key, url } = await this.uploadFile(file, folder);
+            return { key, url, originalName: file.originalname };
+        });
+
+        return Promise.all(uploadPromises);
+    }
+
+    /**
      * Get file URL from S3 key
      */
     getFileUrl(key: string): string {
