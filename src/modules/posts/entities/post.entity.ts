@@ -13,7 +13,6 @@ import { User } from '../../users/entities/user.entity';
 
 export enum PostType {
     TEXT = 'text',
-    TEXT_WITH_IMAGES = 'text_with_images',
     POLL = 'poll',
     POLL_WITH_IMAGES = 'poll_with_images',
 }
@@ -22,7 +21,7 @@ export interface PollOption {
     id: string; // Unique identifier for the option
     text: string;
     imageUrl?: string; // Optional image URL for the option
-    voteCount: number;
+    voteCount: number; // Number of votes for this option
 }
 
 @Entity('posts')

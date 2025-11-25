@@ -6,7 +6,9 @@ import { User } from './entities/user.entity';
 import { UserSession } from '../session/entities/user-session.entity';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { StorageService } from '../../common/services/storage.service';
 import { S3StorageService } from '../../common/services/s3-storage.service';
+import { FileStorageService } from '../../common/services/file-storage.service';
 import { SessionModule } from '../session/session.module';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
@@ -25,7 +27,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     }),
   ],
   controllers: [UsersController],
-  providers: [UsersService, S3StorageService, JwtAuthGuard],
+  providers: [UsersService, StorageService, S3StorageService, FileStorageService, JwtAuthGuard],
   exports: [UsersService],
 })
 export class UsersModule { }

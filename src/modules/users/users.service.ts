@@ -3,14 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { AuthProvider } from '../auth/enums/auth-provider.enum';
-import { S3StorageService } from '../../common/services/s3-storage.service';
+import { StorageService } from '../../common/services/storage.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User) private usersRepo: Repository<User>,
     private dataSource: DataSource,
-    private s3StorageService: S3StorageService,
+    private storageService: StorageService,
   ) { }
 
   findByPhone(phone: string) {
@@ -33,6 +33,7 @@ export class UsersService {
     return this.usersRepo
       .createQueryBuilder('user')
       .where('user.email = :email', { email })
+      .where('user.provider = :provider', { provider: AuthProvider.EMAIL })
       .addSelect('user.password')
       .getOne();
   }
@@ -113,7 +114,7 @@ export class UsersService {
         // Check if avatar is a file object (has buffer property) or a string
         if (data.avatar && typeof data.avatar === 'object' && 'buffer' in data.avatar) {
           // Upload file to S3
-          const { url } = await this.s3StorageService.uploadFile(data.avatar, 'avatars');
+          const { url } = await this.storageService.uploadFile(data.avatar, 'avatars');
           avatarUrl = url;
         } else if (typeof data.avatar === 'string') {
           // Use provided string (URL or avatar ID)
