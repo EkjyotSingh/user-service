@@ -9,6 +9,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { OtpModule } from './modules/otp/otp.module';
 import { SessionModule } from './modules/session/session.module';
 import { QuestionnaireModule } from './modules/questionnaire/questionnaire.module';
+import { PostsModule } from './modules/posts/posts.module';
 
 @Module({
   imports: [
@@ -49,9 +50,10 @@ import { QuestionnaireModule } from './modules/questionnaire/questionnaire.modul
     OtpModule,
     SessionModule,
     QuestionnaireModule,
+    PostsModule,
   ],
 
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

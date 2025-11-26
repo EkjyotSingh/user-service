@@ -16,17 +16,17 @@ export class S3StorageService {
         this.bucketName = this.configService.get<string>('AWS_S3_BUCKET_NAME') || '';
         this.cloudFrontUrl = this.configService.get<string>('AWS_CLOUDFRONT_URL');
 
-        if (!this.bucketName) {
-            throw new Error('AWS_S3_BUCKET_NAME is required');
+        // Only initialize S3 client if bucket name is provided
+        // This allows the service to be instantiated even when using local storage
+        if (this.bucketName) {
+            this.s3Client = new S3Client({
+                region: this.region,
+                credentials: {
+                    accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID') || '',
+                    secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY') || '',
+                },
+            });
         }
-
-        this.s3Client = new S3Client({
-            region: this.region,
-            credentials: {
-                accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID') || '',
-                secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY') || '',
-            },
-        });
     }
 
     /**
@@ -44,6 +44,10 @@ export class S3StorageService {
         file: any,
         folder: string = 'uploads',
     ): Promise<{ key: string; url: string }> {
+        if (!this.bucketName || !this.s3Client) {
+            throw new Error('S3 is not configured. AWS_S3_BUCKET_NAME is required.');
+        }
+
         const fileName = this.generateFileName(file.originalname);
         const key = folder ? `${folder}/${fileName}` : fileName;
 
@@ -86,6 +90,21 @@ export class S3StorageService {
         } catch (error) {
             console.warn(`Failed to delete file from S3: ${key}`, error);
         }
+    }
+
+    /**
+     * Upload multiple files to S3
+     */
+    async uploadFiles(
+        files: any[],
+        folder: string = 'uploads',
+    ): Promise<Array<{ key: string; url: string; originalName: string }>> {
+        const uploadPromises = files.map(async (file) => {
+            const { key, url } = await this.uploadFile(file, folder);
+            return { key, url, originalName: file.originalname };
+        });
+
+        return Promise.all(uploadPromises);
     }
 
     /**

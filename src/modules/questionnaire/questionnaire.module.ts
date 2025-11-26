@@ -12,7 +12,9 @@ import { UserAnswer } from './entities/user-answer.entity';
 import { UsersModule } from '../users/users.module';
 import { SessionModule } from '../session/session.module';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { StorageService } from '../../common/services/storage.service';
 import { S3StorageService } from '../../common/services/s3-storage.service';
+import { FileStorageService } from '../../common/services/file-storage.service';
 
 @Module({
   imports: [
@@ -30,7 +32,7 @@ import { S3StorageService } from '../../common/services/s3-storage.service';
     }),
   ],
   controllers: [QuestionnaireController],
-  providers: [QuestionnaireService, QuestionnaireSeeder, JwtAuthGuard, S3StorageService],
+  providers: [QuestionnaireService, QuestionnaireSeeder, JwtAuthGuard, StorageService, S3StorageService, FileStorageService],
   exports: [QuestionnaireService, QuestionnaireSeeder],
 })
 export class QuestionnaireModule { }

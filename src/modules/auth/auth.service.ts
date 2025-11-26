@@ -117,7 +117,7 @@ export class AuthService {
       const passwordOk = await bcrypt.compare(password ?? '', user.password);
       if (!passwordOk) throw new UnauthorizedException('Invalid credentials');
 
-      return this.signTokensForUser(user, deviceInfo, ip);
+      return { ...(await this.signTokensForUser(user, deviceInfo, ip)), message: "Logged in successfully" };
     }
   }
 
@@ -409,18 +409,58 @@ export class AuthService {
     let picture: string | null = null;
 
     if (type === AuthProvider.GOOGLE) {
+      // Validate token format (ID tokens are JWTs with 3 parts separated by dots)
+      if (!idToken || typeof idToken !== 'string') {
+        throw new BadRequestException('ID token is required and must be a string');
+      }
+
+      const tokenParts = idToken.split('.');
+      if (tokenParts.length !== 3) {
+        throw new BadRequestException(
+          'Invalid token format. Expected a Google ID token (JWT with 3 parts). ' +
+          'Make sure you are sending the ID token, not the access token. ' +
+          'ID tokens are JWTs that contain user identity information.'
+        );
+      }
+
       let ticket;
       try {
+        const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+        if (!clientId) {
+          throw new BadRequestException('GOOGLE_CLIENT_ID is not configured');
+        }
+
         ticket = await this.googleClient.verifyIdToken({
           idToken,
-          audience: this.config.get<string>('GOOGLE_CLIENT_ID'),
+          audience: clientId,
         });
-      } catch (err) {
-        console.debug('Google token verify failed', err);
-        throw new UnauthorizedException('Invalid Google token');
+      } catch (err: any) {
+        console.error('Google token verify failed:', {
+          error: err.message,
+          code: err.code,
+          name: err.name,
+          tokenLength: idToken?.length,
+          tokenPreview: idToken?.substring(0, 50),
+        });
+
+        // Provide more specific error messages
+        if (err.message?.includes('Token used too early')) {
+          throw new UnauthorizedException('Token is not yet valid. Please check your device time.');
+        } else if (err.message?.includes('Token expired')) {
+          throw new UnauthorizedException('Token has expired. Please sign in again.');
+        } else if (err.message?.includes('Invalid token signature')) {
+          throw new UnauthorizedException('Invalid token signature. Please ensure you are using an ID token, not an access token.');
+        } else if (err.message?.includes('Wrong number of segments')) {
+          throw new UnauthorizedException('Invalid token format. Please ensure you are sending a Google ID token (JWT), not an access token.');
+        } else if (err.message?.includes('audience')) {
+          throw new UnauthorizedException(`Token audience mismatch. Expected client ID: ${this.config.get<string>('GOOGLE_CLIENT_ID')}`);
+        }
+
+        throw new UnauthorizedException(`Invalid Google token: ${err.message || 'Token verification failed'}`);
       }
 
       const payload = ticket.getPayload();
+      console.log(payload, 'payload');
       if (!payload) throw new UnauthorizedException('Invalid Google token payload');
 
       providerId = payload['sub'];
@@ -487,6 +527,6 @@ export class AuthService {
     }
 
     // Return tokens
-    return this.signTokensForUser(user!, deviceId, ip);
+    return { ...(await this.signTokensForUser(user!, deviceId, ip)), message: "Logged in successfully" };
   }
 }

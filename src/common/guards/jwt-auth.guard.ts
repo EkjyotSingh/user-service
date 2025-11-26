@@ -20,7 +20,7 @@ export class JwtAuthGuard implements CanActivate {
     const token = this.extractTokenFromHeader(request);
 
     if (!token) {
-      throw new UnauthorizedException('Authorization token required');
+      throw new UnauthorizedException('Session expired. Please login again.');
     }
 
     try {
@@ -29,7 +29,7 @@ export class JwtAuthGuard implements CanActivate {
       const sessionId = payload.jti; // JWT ID - session ID from token
 
       if (!userId) {
-        throw new UnauthorizedException('Invalid token payload');
+        throw new UnauthorizedException('Session expired. Please login again.');
       }
 
       // Verify session is still active (if sessionId is present and SessionService is available)

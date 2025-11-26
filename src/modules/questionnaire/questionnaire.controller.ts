@@ -16,7 +16,7 @@ import {
 import { FileInterceptor, AnyFilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiConsumes, ApiProperty } from '@nestjs/swagger';
-import { S3StorageService } from '../../common/services/s3-storage.service';
+import { StorageService } from '../../common/services/storage.service';
 import { QuestionnaireService } from './questionnaire.service';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { SubmitStepDto } from './dto/submit-step.dto';
@@ -32,7 +32,7 @@ import { GetQuestionnairesDto } from './dto/get-questionnaire.dto';
 export class QuestionnaireController {
   constructor(
     private readonly questionnaireService: QuestionnaireService,
-    private readonly s3StorageService: S3StorageService,
+    private readonly storageService: StorageService,
   ) { }
 
   @Get()
@@ -62,22 +62,9 @@ export class QuestionnaireController {
     type: [QuestionnaireResponseDto],
   })
   async getQuestionnairesForUser(@CurrentUser() user: User) {
-    const questionnaires = await this.questionnaireService.getQuestionnaires();
+    const questionnaires = await this.questionnaireService.getQuestionnaires(user.isAdvisor ? QuestionnaireType.ADVISOR : QuestionnaireType.USER);
 
-    // Filter questionnaires based on user profile
-    const filtered = questionnaires.filter((q) => {
-      // User questionnaire - show to all users who completed profile
-      if (q.type === QuestionnaireType.USER && !user.isAdvisor && user.profileCompleted) {
-        return true;
-      }
-      // Advisor questionnaire - show only if user wants to be advisor
-      if (q.type === QuestionnaireType.ADVISOR && user.isAdvisor && user.profileCompleted) {
-        return true;
-      }
-      return false;
-    });
-
-    return filtered;
+    return questionnaires;
   }
 
   @Get(':id')
@@ -243,7 +230,7 @@ export class QuestionnaireController {
 
     // If file is uploaded, upload to S3 and set fileUrl and fileName
     if (file) {
-      const { url, key } = await this.s3StorageService.uploadFile(file, 'questionnaire-uploads');
+      const { url, key } = await this.storageService.uploadFile(file, 'questionnaire-uploads');
       dto.fileUrl = url;
       dto.fileName = file.originalname;
     }
@@ -326,7 +313,7 @@ export class QuestionnaireController {
     for (const answer of answers) {
       const file = filesMap.get(answer.questionId);
       if (file) {
-        const { url } = await this.s3StorageService.uploadFile(file, 'questionnaire-uploads');
+        const { url } = await this.storageService.uploadFile(file, 'questionnaire-uploads');
         answer.fileUrl = url;
         answer.fileName = file.originalname;
       }

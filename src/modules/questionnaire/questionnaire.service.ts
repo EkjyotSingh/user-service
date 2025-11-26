@@ -37,8 +37,8 @@ export class QuestionnaireService {
     if (type) {
       query.andWhere('questionnaire.type = :type', { type });
     }
-
-    return query.getMany();
+    const result = await query.getMany()
+    return { ...result[0], message: "Questionnaires retrieved successfully" };
   }
 
   async getQuestionnaireById(id: string) {
@@ -281,35 +281,6 @@ export class QuestionnaireService {
       currentStep,
       stepStatus,
     };
-  }
-
-  async checkAllQuestionnairesCompleted(userId: string): Promise<boolean> {
-    const questionnaires = await this.getQuestionnaires();
-    const allAnswers = await this.getUserAnswers(userId);
-
-    // Group answers by questionnaire
-    const answersByQuestionnaire = new Map<string, Set<string>>();
-    allAnswers.forEach((answer) => {
-      const qId = answer.question.questionnaire.id;
-      if (!answersByQuestionnaire.has(qId)) {
-        answersByQuestionnaire.set(qId, new Set());
-      }
-      answersByQuestionnaire.get(qId)!.add(answer.questionId);
-    });
-
-    // Check if all required questions are answered for each questionnaire
-    for (const questionnaire of questionnaires) {
-      const answeredQuestionIds = answersByQuestionnaire.get(questionnaire.id) || new Set();
-      const requiredQuestions = questionnaire.questions.filter((q) => q.isRequired);
-
-      for (const question of requiredQuestions) {
-        if (!answeredQuestionIds.has(question.id)) {
-          return false;
-        }
-      }
-    }
-
-    return true;
   }
 
   private validateAnswer(question: Question, dto: SubmitAnswerDto) {
